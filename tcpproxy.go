@@ -173,7 +173,12 @@ func (p *Proxy) Wait() error {
 // Close closes all the proxy's self-opened listeners.
 func (p *Proxy) Close() error {
 	for _, c := range p.lns {
-		c.Close()
+		if c != nil {
+			err := c.Close()
+			if err != nil {
+				return err
+			}
+		}
 	}
 	return nil
 }
@@ -194,7 +199,12 @@ func (p *Proxy) Start() error {
 	for ipPort, config := range p.configs {
 		ln, err := p.netListen()("tcp", ipPort)
 		if err != nil {
-			p.Close()
+			if p != nil {
+				err := p.Close()
+				if err != nil {
+					return err
+				}
+			}
 			return err
 		}
 		p.lns = append(p.lns, ln)
@@ -206,7 +216,9 @@ func (p *Proxy) Start() error {
 
 func (p *Proxy) awaitFirstError(errc <-chan error) {
 	p.err = <-errc
-	close(p.donec)
+	if p.donec != nil {
+		close(p.donec)
+	}
 }
 
 func (p *Proxy) serveListener(ret chan<- error, ln net.Listener, routes []route) {
@@ -240,7 +252,9 @@ func (p *Proxy) serveConn(c net.Conn, routes []route) bool {
 	}
 	// TODO: hook for this?
 	log.Printf("tcpproxy: no routes matched conn %v/%v; closing", c.RemoteAddr().String(), c.LocalAddr().String())
-	c.Close()
+	if c != nil {
+		c.Close()
+	}
 	return false
 }
 
@@ -345,7 +359,13 @@ func UnderlyingConn(c net.Conn) net.Conn {
 	return c
 }
 
-func goCloseConn(c net.Conn) { go c.Close() }
+func goCloseConn(c net.Conn) {
+	go func() {
+		if c != nil {
+			c.Close()
+		}
+	}()
+}
 
 // HandleConn implements the Target interface.
 func (dp *DialProxy) HandleConn(src net.Conn) {
@@ -467,6 +487,8 @@ func (dp *DialProxy) onDialError() func(src net.Conn, dstDialErr error) {
 	}
 	return func(src net.Conn, dstDialErr error) {
 		log.Printf("tcpproxy: for incoming conn %v, error dialing %q: %v", src.RemoteAddr().String(), dp.Addr, dstDialErr)
-		src.Close()
+		if src != nil {
+			src.Close()
+		}
 	}
 }
